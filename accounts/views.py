@@ -1,4 +1,5 @@
-from django.http import HttpResponse
+
+
 from django.shortcuts import redirect, render
 from django.contrib import messages,auth 
 
@@ -14,6 +15,13 @@ from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator 
 from django.core.mail import EmailMessage
+
+from cart.views import _cart_id
+from cart.models import Cart,Cartitem
+
+#redirection
+import requests
+
 
 # Create your views here.
 def register(request):
@@ -58,12 +66,63 @@ def login(request):
         password = request.POST['password']
    
         user = auth.authenticate(email=email, password=password)
-        print(password)
-        print(email)
+        print(user)
+       
 
         if user is not None:
+            try:
+                cart = Cart.objects.get(cart_id = _cart_id(request))                                     #try  block checking if any
+                is_cart_item_exists =Cartitem.objects.filter( cart=cart).exists()                   #cart items are present before login
+                if is_cart_item_exists:
+                    cart_item = Cartitem.objects.filter(cart=cart)
+                    
+                    #getting the product variation by cart id
+                    product_variation = []
+                    for item in cart_item:
+                        variation = item.variations.all()
+                        product_variation.append(list(variation))
+                        # item.user = user
+                        # item.save()
+
+                    #get the cart item from the userside
+                    cart_item=Cartitem.objects.filter(user=user)
+                    #EXISTING VARIATIONS->FROM DATABASE
+                    #CURRENT VARIATIONS->FROM DATABASE
+                    # ITEM_ID-> DATABASE#
+                    ex_var_list = []
+                    id          = []
+                    for item in cart_item:
+                        existing_variation = item.variations.all()
+                        ex_var_list.append(list(existing_variation))
+                        id.append(item.id)
+                    
+                    for pv in product_variation:
+                        if pv in ex_var_list:
+                            index = ex_var_list.index(pv)
+                            item_id = id[index]
+                            item = Cartitem.objects.get(id=item_id)
+                            item.quantity += 1
+                            item.user =user
+                            item.save()
+                        else:
+                            cart_item=Cartitem.objects.filter(cart=cart)
+                            for item in cart_item:
+                                item.user=user
+                                item.save()
+            except:
+                pass
+
             auth.login(request,user)
-            return redirect('home')
+            url = request.META.get('HTTP_REFERER')
+            try:
+                query = requests.utils.urlparse(url).query
+                
+                params = dict(x.split('=') for x in query.split('&'))
+                if 'next' in params:
+                    nextPage = params['next']
+                    return redirect(nextPage)
+            except:
+                return redirect('home')  #redirection
         else:
             messages.error(request, 'invalid details')
             return redirect('login')
@@ -158,7 +217,8 @@ def resetPassword(request):
     else:
         return render( request,'accounts/resetPassword.html')
         
-
+def dashboard(request):
+    return render(request, 'accounts/dashboard.html')
 
 
 
